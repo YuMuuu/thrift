@@ -24,6 +24,8 @@ public:
 
     // TODO: parsed_options,option_string でmergeや、service|message|enum でのfile分割、name space
     // 単位でのfile分割、 proto2などのバージョンサポートを行う
+    (void)parsed_options;
+    (void)option_string;
 
     out_dir_base_ = "gen-grpc";
   }
@@ -42,6 +44,7 @@ public:
   void close_generator() override { f_proto_.close(); }
 
   void generate_program() override {
+    init_generator();
     generate_syntax();
     generate_package();
 
@@ -56,14 +59,33 @@ public:
     }
   }
 
+  static bool is_valid_namespace(const std::string& sub_namespace) {
+    (void)sub_namespace;
+    return true;
+  }
+
+  std::string display_name() const override {
+    return "gRPC Generator";
+  }
+
+  void generate_typedef(t_typedef* ttypedef) override {
+    (void)ttypedef;
+  }
+
 private:
   std::ofstream f_proto_;
 
   void generate_syntax() { f_proto_ << "syntax = \"proto3\";\n\n"; }
 
-  void generate_package() { f_proto_ << "package " << program_->get_namespace("grpc") << ";\n\n"; }
+  void generate_package() {
+    std::string grpc_namespace = program_->get_namespace("grpc");
+    if (grpc_namespace.empty()) {
+        grpc_namespace = "default_package";
+    }
+    f_proto_ << "package " << grpc_namespace << ";\n\n";
+  }
 
-  void generate_struct(const t_struct* strct) {
+  void generate_struct(t_struct* strct) override {
     f_proto_ << "message " << to_pascal_case(strct->get_name()) << " {\n";
     int field_id = 1;
     for (const auto& field : strct->get_members()) {
@@ -75,7 +97,7 @@ private:
     f_proto_ << "}\n\n";
   }
 
-  void generate_enum(const t_enum* enm) {
+  void generate_enum(t_enum* enm) override {
     f_proto_ << "enum " << to_pascal_case(enm->get_name()) << " {\n";
     for (const auto& value : enm->get_constants()) {
       // If the value is 0, add the suffix "UNSPECIFIED"
@@ -88,15 +110,42 @@ private:
     f_proto_ << "}\n\n";
   }
 
-  void generate_service(const t_service* svc) {
+  void generate_service(t_service* svc) override{
     f_proto_ << "service " << to_pascal_case(svc->get_name()) << " {\n";
     for (const auto& func : svc->get_functions()) {
-      f_proto_ << "  rpc " << to_pascal_case(func->get_name()) << " ("
-               << to_pascal_case(func->get_arglist()->get_name()) << ") returns ("
-               << to_pascal_case(func->get_returntype()->get_name()) << ");\n";
+        std::string request_type = to_pascal_case(func->get_name());
+        std::string response_type = convert_type(func->get_returntype());
+
+        // generate_function_args(func, request_type);
+        // generate_function_response(func, response_type);
+
+        f_proto_ << "  rpc " << to_pascal_case(func->get_name()) << " ("
+                 << request_type << ") returns (" << response_type << ");\n";
     }
     f_proto_ << "}\n\n";
   }
+
+  // void generate_function_args(const t_function* func, const std::string& message_name) {
+  //   f_proto_ << "message " << message_name << " {\n";
+  //   int field_id = 1;
+
+  //   for (const auto& arg : func->get_arglist()->get_members()) {
+  //       f_proto_ << "  " << convert_type(arg->get_type()) << " "
+  //                << to_lower_snake_case(arg->get_name()) << " = " << field_id++ << ";\n";
+  //   }
+
+  //   f_proto_ << "}\n\n";
+  // }
+
+  // void generate_function_response(const t_function* func, const std::string& message_name) {
+  //   f_proto_ << "message " << message_name << " {\n";
+
+  //   if (!func->get_returntype()->is_void()) {
+  //       f_proto_ << "  " << convert_type(func->get_returntype()) << " value = 1;\n";
+  //   }
+
+  //   f_proto_ << "}\n\n";
+  // }
 
   std::string to_pascal_case(const std::string& name) {
     std::ostringstream result;
@@ -136,16 +185,15 @@ private:
 
   std::string to_upper_snake_case(const std::string& name) {
     std::ostringstream result;
-
     for (size_t i = 0; i < name.size(); ++i) {
-      char c = name[i];
-      if (std::isupper(c) && i > 0) {
-        result << "_";
-      }
-      result << static_cast<char>(std::toupper(c));
+        char c = name[i];
+        if (std::isupper(c) && i > 0 && std::islower(name[i - 1])) {
+            result << "_";  // 大文字の直前にアンダースコアを追加
+        }
+        result << static_cast<char>(std::toupper(c));
     }
     return result.str();
-  }
+}
 
   std::string prefix(const t_field* field) {
     switch (field->get_req()) {
