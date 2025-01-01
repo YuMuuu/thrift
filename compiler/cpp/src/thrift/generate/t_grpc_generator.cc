@@ -48,15 +48,20 @@ public:
     generate_syntax();
     generate_package();
 
-    for (auto* strct : program_->get_structs()) {
-      generate_struct(strct);
-    }
     for (auto* enm : program_->get_enums()) {
       generate_enum(enm);
+    }
+    for (auto* ttypedef : program_->get_typedefs()) {
+      generate_typedef(ttypedef);
+    }
+    for (auto* strct : program_->get_structs()) {
+      generate_struct(strct);
     }
     for (auto* svc : program_->get_services()) {
       generate_service(svc);
     }
+
+    close_generator();
   }
 
   static bool is_valid_namespace(const std::string& sub_namespace) {
@@ -64,12 +69,12 @@ public:
     return true;
   }
 
-  std::string display_name() const override {
-    return "gRPC Generator";
-  }
+  std::string display_name() const override { return "gRPC Generator"; }
 
   void generate_typedef(t_typedef* ttypedef) override {
-    (void)ttypedef;
+    f_proto_ << "message " << to_pascal_case(ttypedef->get_symbolic()) << " {\n";
+    f_proto_ << "  " << convert_type(ttypedef->get_type()) << " value = 1;\n";
+    f_proto_ << "}\n\n";
   }
 
 private:
@@ -80,7 +85,7 @@ private:
   void generate_package() {
     std::string grpc_namespace = program_->get_namespace("grpc");
     if (grpc_namespace.empty()) {
-        grpc_namespace = "default_package";
+      grpc_namespace = "default_package";
     }
     f_proto_ << "package " << grpc_namespace << ";\n\n";
   }
@@ -110,42 +115,44 @@ private:
     f_proto_ << "}\n\n";
   }
 
-  void generate_service(t_service* svc) override{
+  void generate_service(t_service* svc) override {
+    for (const auto& func : svc->get_functions()) {
+      t_struct* request_args_struct = func->get_arglist();
+      std::string request_message_name = to_pascal_case(func->get_name()) + "Request";
+      f_proto_ << "message " << request_message_name << " {\n";
+      int field_id = 1;
+      for (const auto& arg : request_args_struct->get_members()) {
+        f_proto_ << "  " << convert_type(arg->get_type()) << " "
+                 << to_lower_snake_case(arg->get_name()) << " = " << field_id++ << ";\n";
+      }
+      f_proto_ << "}\n\n";
+
+      if (!(func->get_returntype()->is_typedef())) {
+        std::string response_message_name = to_pascal_case(func->get_name()) + "Response";
+        f_proto_ << "message " << response_message_name << " {\n";
+        if(!(func->get_returntype()->is_void())) {
+           f_proto_ << "  " << convert_type(func->get_returntype()) << " value = 1;\n";
+        }
+        f_proto_ << "}\n\n";
+      }
+    }
+
     f_proto_ << "service " << to_pascal_case(svc->get_name()) << " {\n";
     for (const auto& func : svc->get_functions()) {
-        std::string request_type = to_pascal_case(func->get_name());
-        std::string response_type = convert_type(func->get_returntype());
+      std::string request_message_name = to_pascal_case(func->get_name()) + "Request";
+      std::string response_message_name;
 
-        // generate_function_args(func, request_type);
-        // generate_function_response(func, response_type);
+      if (func->get_returntype()->is_typedef()) {
+        response_message_name = to_pascal_case(func->get_returntype()->get_name());
+      } else {
+        response_message_name = to_pascal_case(func->get_name()) + "Response";
+      }
 
-        f_proto_ << "  rpc " << to_pascal_case(func->get_name()) << " ("
-                 << request_type << ") returns (" << response_type << ");\n";
+      f_proto_ << "  rpc " << to_pascal_case(func->get_name()) << " (" << request_message_name
+               << ") returns (" << response_message_name << ");\n";
     }
     f_proto_ << "}\n\n";
   }
-
-  // void generate_function_args(const t_function* func, const std::string& message_name) {
-  //   f_proto_ << "message " << message_name << " {\n";
-  //   int field_id = 1;
-
-  //   for (const auto& arg : func->get_arglist()->get_members()) {
-  //       f_proto_ << "  " << convert_type(arg->get_type()) << " "
-  //                << to_lower_snake_case(arg->get_name()) << " = " << field_id++ << ";\n";
-  //   }
-
-  //   f_proto_ << "}\n\n";
-  // }
-
-  // void generate_function_response(const t_function* func, const std::string& message_name) {
-  //   f_proto_ << "message " << message_name << " {\n";
-
-  //   if (!func->get_returntype()->is_void()) {
-  //       f_proto_ << "  " << convert_type(func->get_returntype()) << " value = 1;\n";
-  //   }
-
-  //   f_proto_ << "}\n\n";
-  // }
 
   std::string to_pascal_case(const std::string& name) {
     std::ostringstream result;
@@ -157,7 +164,8 @@ private:
           result << static_cast<char>(std::toupper(c));
           capitalize_next = false;
         } else {
-          result << static_cast<char>(std::tolower(c));
+          // result << static_cast<char>(std::tolower(c));
+          result << c;
         }
       } else {
         capitalize_next = true;
@@ -186,14 +194,14 @@ private:
   std::string to_upper_snake_case(const std::string& name) {
     std::ostringstream result;
     for (size_t i = 0; i < name.size(); ++i) {
-        char c = name[i];
-        if (std::isupper(c) && i > 0 && std::islower(name[i - 1])) {
-            result << "_";  // 大文字の直前にアンダースコアを追加
-        }
-        result << static_cast<char>(std::toupper(c));
+      char c = name[i];
+      if (std::isupper(c) && i > 0 && std::islower(name[i - 1])) {
+        result << "_";
+      }
+      result << static_cast<char>(std::toupper(c));
     }
     return result.str();
-}
+  }
 
   std::string prefix(const t_field* field) {
     switch (field->get_req()) {
@@ -212,7 +220,7 @@ private:
       const auto* base_type = static_cast<const t_base_type*>(type);
       switch (base_type->get_base()) {
       case t_base_type::TYPE_VOID:
-        return "google.protobuf.Empty";
+        throw std::runtime_error("Unsupported void type in message struct");
       case t_base_type::TYPE_STRING:
         return "string";
       case t_base_type::TYPE_BOOL:
@@ -247,8 +255,10 @@ private:
       return "string";
     } else if (type->is_binary()) {
       return "bytes";
-    } else {
+    } else if (type->is_typedef() || type->is_enum() || type->is_struct()) {
       return to_pascal_case(type->get_name());
+    } else {
+      throw std::runtime_error("Unsupported type " + type->get_name());
     }
   }
 };
