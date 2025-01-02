@@ -81,8 +81,8 @@ private:
   void generate_syntax() { f_proto_ << "syntax = \"proto3\";\n\n"; }
 
   void generate_package() {
-    std::string grpc_namespace = program_->get_namespace("grpc");
-    if (grpc_namespace.empty()) {
+    std::string grpc_namespace = namespace_path(program_);
+    if (program_->get_namespace("grpc").empty()) {
       grpc_namespace = "default_package";
     }
     f_proto_ << "package " << grpc_namespace << ";\n\n";
@@ -90,8 +90,7 @@ private:
 
   void generate_require() {
     for (const t_program* program : program_->get_includes()) {
-      std::string namespace_path = to_lower_snake_case(program->get_namespace("grpc"));
-      f_proto_ << "import " << namespace_path << ".proto;\n";
+      f_proto_ << "import " << namespace_path(program) << ".proto;\n";
     }
     f_proto_ << "\n";
   }
@@ -171,8 +170,6 @@ private:
 
     const t_service* parent_service = svc->get_extends();
     if (parent_service != nullptr) {
-      std::string namespace_path
-          = to_lower_snake_case(parent_service->get_program()->get_namespace("grpc"));
 
       for (const t_function* func : parent_service->get_functions()) {
         std::string request_message_name = to_pascal_case(func->get_name()) + "PRequest";
@@ -184,13 +181,17 @@ private:
           response_message_name = to_pascal_case(func->get_name()) + "PResponse";
         }
 
-        f_proto_ << "  rpc " << to_pascal_case(func->get_name()) << " (" << namespace_path << "."
-                 << request_message_name << ") returns (" << namespace_path << "."
+        f_proto_ << "  rpc " << to_pascal_case(func->get_name()) << " (" <<  namespace_path(parent_service->get_program()) << "."
+                 << request_message_name << ") returns (" <<  namespace_path(parent_service->get_program()) << "."
                  << response_message_name << ");\n";
       }
     }
 
     f_proto_ << "}\n\n";
+  }
+
+  std::string namespace_path(const t_program* program) {
+    return to_lower_snake_case(program->get_namespace("grpc"));
   }
 
   std::string to_pascal_case(const std::string& name) {
@@ -298,8 +299,7 @@ private:
       if (const t_program* type_program = type->get_program()) {
         if (type_program != program_) {
           if (!(type_program->get_namespace("grpc").empty())) {
-            std::string namespace_path = to_lower_snake_case(type_program->get_namespace("grpc"));
-            return namespace_path + "." + to_pascal_case(type->get_name());
+            return namespace_path(type_program) + "." + to_pascal_case(type->get_name());
           }
         }
       }
