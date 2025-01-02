@@ -47,6 +47,7 @@ public:
     init_generator();
     generate_syntax();
     generate_package();
+    generate_require();
 
     for (auto* enm : program_->get_enums()) {
       generate_enum(enm);
@@ -90,6 +91,14 @@ private:
     f_proto_ << "package " << grpc_namespace << ";\n\n";
   }
 
+  void generate_require() {
+    for (const auto& program : program_->get_includes()) {
+      std::string namespace_path = to_lower_snake_case(program->get_namespace("grpc"));
+      f_proto_ << "import " << namespace_path << ".proto;\n";
+    }
+    f_proto_ << "\n";
+  }
+
   void generate_struct(t_struct* strct) override {
     f_proto_ << "message " << to_pascal_case(strct->get_name()) << " {\n";
     int field_id = 1;
@@ -103,13 +112,23 @@ private:
   }
 
   void generate_enum(t_enum* enm) override {
-    f_proto_ << "enum " << to_pascal_case(enm->get_name()) << " {\n";
-    for (const auto& value : enm->get_constants()) {
-      // If the value is 0, add the suffix "UNSPECIFIED"
-      std::string enum_name = to_upper_snake_case(value->get_name());
+    const auto& constants = enm->get_constants();
+
+    bool has_zero_value = false;
+    for (const auto& value : constants) {
       if (value->get_value() == 0) {
-        enum_name += "_UNSPECIFIED";
+        has_zero_value = true;
+        break;
       }
+    }
+
+    f_proto_ << "enum " << to_pascal_case(enm->get_name()) << " {\n";
+    if (!has_zero_value) {
+      f_proto_ << "  " << to_upper_snake_case(enm->get_name()) << "_UNSPECIFIED = 0;\n";
+    }
+
+    for (const auto& value : enm->get_constants()) {
+      std::string enum_name = to_upper_snake_case(value->get_name());
       f_proto_ << "  " << enum_name << " = " << value->get_value() << ";\n";
     }
     f_proto_ << "}\n\n";
@@ -118,7 +137,7 @@ private:
   void generate_service(t_service* svc) override {
     for (const auto& func : svc->get_functions()) {
       t_struct* request_args_struct = func->get_arglist();
-      std::string request_message_name = to_pascal_case(func->get_name()) + "Request";
+      std::string request_message_name = to_pascal_case(func->get_name()) + "PRequest";
       f_proto_ << "message " << request_message_name << " {\n";
       int field_id = 1;
       for (const auto& arg : request_args_struct->get_members()) {
@@ -128,29 +147,52 @@ private:
       f_proto_ << "}\n\n";
 
       if (!(func->get_returntype()->is_typedef())) {
-        std::string response_message_name = to_pascal_case(func->get_name()) + "Response";
+        std::string response_message_name = to_pascal_case(func->get_name()) + "PResponse";
         f_proto_ << "message " << response_message_name << " {\n";
-        if(!(func->get_returntype()->is_void())) {
-           f_proto_ << "  " << convert_type(func->get_returntype()) << " value = 1;\n";
+        if (!(func->get_returntype()->is_void())) {
+          f_proto_ << "  " << convert_type(func->get_returntype()) << " value = 1;\n";
         }
         f_proto_ << "}\n\n";
       }
     }
 
     f_proto_ << "service " << to_pascal_case(svc->get_name()) << " {\n";
+
     for (const auto& func : svc->get_functions()) {
-      std::string request_message_name = to_pascal_case(func->get_name()) + "Request";
+      std::string request_message_name = to_pascal_case(func->get_name()) + "PRequest";
       std::string response_message_name;
 
       if (func->get_returntype()->is_typedef()) {
         response_message_name = to_pascal_case(func->get_returntype()->get_name());
       } else {
-        response_message_name = to_pascal_case(func->get_name()) + "Response";
+        response_message_name = to_pascal_case(func->get_name()) + "PResponse";
       }
 
       f_proto_ << "  rpc " << to_pascal_case(func->get_name()) << " (" << request_message_name
                << ") returns (" << response_message_name << ");\n";
     }
+
+    const t_service* parent_service = svc->get_extends();
+    if (parent_service != nullptr) {
+      std::string namespace_path
+          = to_lower_snake_case(parent_service->get_program()->get_namespace("grpc"));
+
+      for (const auto& func : parent_service->get_functions()) {
+        std::string request_message_name = to_pascal_case(func->get_name()) + "PRequest";
+        std::string response_message_name;
+
+        if (func->get_returntype()->is_typedef()) {
+          response_message_name = to_pascal_case(func->get_returntype()->get_name());
+        } else {
+          response_message_name = to_pascal_case(func->get_name()) + "PResponse";
+        }
+
+        f_proto_ << "  rpc " << to_pascal_case(func->get_name()) << " (" << namespace_path << "."
+                 << request_message_name << ") returns (" << namespace_path << "."
+                 << response_message_name << ");\n";
+      }
+    }
+
     f_proto_ << "}\n\n";
   }
 
@@ -256,6 +298,16 @@ private:
     } else if (type->is_binary()) {
       return "bytes";
     } else if (type->is_typedef() || type->is_enum() || type->is_struct()) {
+      // Check if the type belongs to another program (package)
+      if (const t_program* type_program = type->get_program()) {
+        if (type_program != program_) {
+          std::string namespace_path = to_lower_snake_case(type_program->get_namespace("grpc"));
+          if (!namespace_path.empty()) {
+            return namespace_path + "." + to_pascal_case(type->get_name());
+          }
+        }
+      }
+
       return to_pascal_case(type->get_name());
     } else {
       throw std::runtime_error("Unsupported type " + type->get_name());

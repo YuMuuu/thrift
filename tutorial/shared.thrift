@@ -31,6 +31,7 @@ namespace perl shared
 namespace php shared
 namespace haxe shared
 namespace netstd shared
+namespace grpc shared
 
 
 struct SharedStruct {
