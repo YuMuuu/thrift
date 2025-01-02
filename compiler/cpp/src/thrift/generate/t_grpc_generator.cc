@@ -297,9 +297,9 @@ private:
       // Check if the type belongs to another program (package)
       if (const t_program* type_program = type->get_program()) {
         if (type_program != program_) {
-          std::string namespace_path = to_lower_snake_case(type_program->get_namespace("grpc"));
-          if (!namespace_path.empty()) {
-            return namespace_path + "." + to_pascal_case(type->get_name());
+          if(!(type_program->get_namespace("grpc").empty())) {
+             std::string namespace_path = to_lower_snake_case(type_program->get_namespace("grpc"));
+             return namespace_path + "." + to_pascal_case(type->get_name());
           }
         }
       }
