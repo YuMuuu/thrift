@@ -19,9 +19,6 @@ public:
                    const std::map<std::string, std::string> parsed_options,
                    const std::string& option_string)
     : t_generator(program) {
-    // (void)option_string;
-    // std::map<std::string, std::string>::const_iterator iter;
-
     // TODO: parsed_options,option_string でmergeや、service|message|enum でのfile分割、name space
     // 単位でのfile分割、 proto2などのバージョンサポートを行う
     (void)parsed_options;
@@ -206,7 +203,6 @@ private:
           result << static_cast<char>(std::toupper(c));
           capitalize_next = false;
         } else {
-          // result << static_cast<char>(std::tolower(c));
           result << c;
         }
       } else {
