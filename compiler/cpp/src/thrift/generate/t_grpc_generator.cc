@@ -46,16 +46,16 @@ public:
     generate_package();
     generate_require();
 
-    for (auto* enm : program_->get_enums()) {
+    for (t_enum* enm : program_->get_enums()) {
       generate_enum(enm);
     }
-    for (auto* ttypedef : program_->get_typedefs()) {
+    for (t_typedef* ttypedef : program_->get_typedefs()) {
       generate_typedef(ttypedef);
     }
-    for (auto* strct : program_->get_structs()) {
+    for (t_struct* strct : program_->get_structs()) {
       generate_struct(strct);
     }
-    for (auto* svc : program_->get_services()) {
+    for (t_service* svc : program_->get_services()) {
       generate_service(svc);
     }
 
@@ -89,7 +89,7 @@ private:
   }
 
   void generate_require() {
-    for (const auto& program : program_->get_includes()) {
+    for (const t_program* program : program_->get_includes()) {
       std::string namespace_path = to_lower_snake_case(program->get_namespace("grpc"));
       f_proto_ << "import " << namespace_path << ".proto;\n";
     }
@@ -99,7 +99,7 @@ private:
   void generate_struct(t_struct* strct) override {
     f_proto_ << "message " << to_pascal_case(strct->get_name()) << " {\n";
     int field_id = 1;
-    for (const auto& field : strct->get_members()) {
+    for (const t_field* field : strct->get_members()) {
       f_proto_ << "  "
                << prefix(field) + convert_type(field->get_type()) + " "
                       + to_lower_snake_case(field->get_name()) + " = " + std::to_string(field_id++)
@@ -109,10 +109,10 @@ private:
   }
 
   void generate_enum(t_enum* enm) override {
-    const auto& constants = enm->get_constants();
+    const std::vector<t_enum_value*> constants = enm->get_constants();
 
     bool has_zero_value = false;
-    for (const auto& value : constants) {
+    for (const t_enum_value* value : constants) {
       if (value->get_value() == 0) {
         has_zero_value = true;
         break;
@@ -124,7 +124,7 @@ private:
       f_proto_ << "  " << to_upper_snake_case(enm->get_name()) << "_UNSPECIFIED = 0;\n";
     }
 
-    for (const auto& value : enm->get_constants()) {
+    for (const t_enum_value* value : enm->get_constants()) {
       std::string enum_name = to_upper_snake_case(value->get_name());
       f_proto_ << "  " << enum_name << " = " << value->get_value() << ";\n";
     }
@@ -132,12 +132,12 @@ private:
   }
 
   void generate_service(t_service* svc) override {
-    for (const auto& func : svc->get_functions()) {
+    for (const t_function* func : svc->get_functions()) {
       t_struct* request_args_struct = func->get_arglist();
       std::string request_message_name = to_pascal_case(func->get_name()) + "PRequest";
       f_proto_ << "message " << request_message_name << " {\n";
       int field_id = 1;
-      for (const auto& arg : request_args_struct->get_members()) {
+      for (const t_field* arg : request_args_struct->get_members()) {
         f_proto_ << "  " << convert_type(arg->get_type()) << " "
                  << to_lower_snake_case(arg->get_name()) << " = " << field_id++ << ";\n";
       }
@@ -155,7 +155,7 @@ private:
 
     f_proto_ << "service " << to_pascal_case(svc->get_name()) << " {\n";
 
-    for (const auto& func : svc->get_functions()) {
+    for (const t_function* func : svc->get_functions()) {
       std::string request_message_name = to_pascal_case(func->get_name()) + "PRequest";
       std::string response_message_name;
 
@@ -174,7 +174,7 @@ private:
       std::string namespace_path
           = to_lower_snake_case(parent_service->get_program()->get_namespace("grpc"));
 
-      for (const auto& func : parent_service->get_functions()) {
+      for (const t_function* func : parent_service->get_functions()) {
         std::string request_message_name = to_pascal_case(func->get_name()) + "PRequest";
         std::string response_message_name;
 
@@ -255,7 +255,7 @@ private:
 
   std::string convert_type(const t_type* type) {
     if (type->is_base_type()) {
-      const auto* base_type = static_cast<const t_base_type*>(type);
+      const t_base_type* base_type = static_cast<const t_base_type*>(type);
       switch (base_type->get_base()) {
       case t_base_type::TYPE_VOID:
         throw std::runtime_error("Unsupported void type in message struct");
@@ -275,7 +275,7 @@ private:
         throw std::runtime_error("Unsupported base type");
       }
     } else if (type->is_list()) {
-      const auto* list_type = static_cast<const t_list*>(type);
+      const t_list* list_type = static_cast<const t_list*>(type);
       return "repeated " + convert_type(list_type->get_elem_type());
     } else if (type->is_map() || type->is_set()) {
       t_type* k_type = ((t_map*)type)->get_key_type();
@@ -297,9 +297,9 @@ private:
       // Check if the type belongs to another program (package)
       if (const t_program* type_program = type->get_program()) {
         if (type_program != program_) {
-          if(!(type_program->get_namespace("grpc").empty())) {
-             std::string namespace_path = to_lower_snake_case(type_program->get_namespace("grpc"));
-             return namespace_path + "." + to_pascal_case(type->get_name());
+          if (!(type_program->get_namespace("grpc").empty())) {
+            std::string namespace_path = to_lower_snake_case(type_program->get_namespace("grpc"));
+            return namespace_path + "." + to_pascal_case(type->get_name());
           }
         }
       }
