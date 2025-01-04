@@ -89,8 +89,8 @@ private:
 
   void generate_require() {
     for (const auto& program : program_->get_includes()) {
-      std::string namespace_path = to_lower_snake_case(program->get_namespace("grpc"));
-      f_proto_ << "import " << namespace_path << ".proto;\n";
+      std::string package_name = to_lower_snake_case(program->get_name());
+      f_proto_ << "import " << namespace_path(program) << "/" << package_name << ".proto;\n";
     }
     f_proto_ << "\n";
   }
@@ -191,7 +191,9 @@ private:
   }
 
   std::string namespace_path(const t_program* program) {
-    return to_lower_snake_case(program->get_namespace("grpc"));
+    std::string snake_case_namespace = to_lower_snake_case(program->get_namespace("grpc"));
+    std::replace(snake_case_namespace.begin(), snake_case_namespace.end(), '.', '/');
+    return snake_case_namespace;
   }
 
   std::string to_pascal_case(const std::string& name) {
@@ -282,7 +284,7 @@ private:
       t_type* k_type = ((t_map*)type)->get_key_type();
       t_type* v_type = ((t_map*)type)->get_val_type();
 
-      std::string k_type_name = k_type->get_name();
+      std::string k_type_name = convert_type(k_type);
       if (k_type_name != "string" && k_type_name != "int32" && k_type_name != "int64") {
         throw std::runtime_error("Unsupported key type for Proto3 map: " + k_type_name);
       }
@@ -299,7 +301,8 @@ private:
       if (const t_program* type_program = type->get_program()) {
         if (type_program != program_) {
           if (!(type_program->get_namespace("grpc").empty())) {
-            return namespace_path(type_program) + "." + to_pascal_case(type->get_name());
+            std::string package_name = to_lower_snake_case(type_program->get_name());
+            return namespace_path(type_program) + "/" + package_name  + "/" + to_pascal_case(type->get_name());
           }
         }
       }
