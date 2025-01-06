@@ -84,7 +84,8 @@ private:
     if (program_->get_namespace("grpc").empty()) {
       grpc_namespace = "default_package";
     }
-    f_proto_ << "package " << grpc_namespace << ";\n\n";
+    std::string package_name = to_lower_snake_case(program_->get_name());
+    f_proto_ << "package " << grpc_namespace << "/" << package_name << ";\n\n";
   }
 
   void generate_require() {
