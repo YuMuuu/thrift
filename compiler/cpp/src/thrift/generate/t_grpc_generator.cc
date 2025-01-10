@@ -85,13 +85,13 @@ private:
       grpc_namespace = "default_package";
     }
     std::string package_name = to_lower_snake_case(program_->get_name());
-    f_proto_ << "package " << grpc_namespace << "/" << package_name << ";\n\n";
+    f_proto_ << "package "  << package_name << ";\n\n";
   }
 
   void generate_require() {
     for (const auto& program : program_->get_includes()) {
       std::string package_name = to_lower_snake_case(program->get_name());
-      f_proto_ << "import " << namespace_path(program) << "/" << package_name << ".proto;\n";
+      f_proto_ << "import " << "\"" << package_name << ".proto\";\n";
     }
     f_proto_ << "\n";
   }
@@ -143,27 +143,19 @@ private:
       }
       f_proto_ << "}\n\n";
 
-      if (!(func->get_returntype()->is_typedef())) {
-        std::string response_message_name = to_pascal_case(func->get_name()) + "PResponse";
-        f_proto_ << "message " << response_message_name << " {\n";
-        if (!(func->get_returntype()->is_void())) {
-          f_proto_ << "  " << convert_type(func->get_returntype()) << " value = 1;\n";
-        }
-        f_proto_ << "}\n\n";
+      std::string response_message_name = to_pascal_case(func->get_name()) + "PResponse";
+      f_proto_ << "message " << response_message_name << " {\n";
+      if (!(func->get_returntype()->is_void())) {
+        f_proto_ << "  " << convert_type(func->get_returntype()) << " value = 1;\n";
       }
+      f_proto_ << "}\n\n";
     }
 
     f_proto_ << "service " << to_pascal_case(svc->get_name()) << " {\n";
 
     for (const auto& func : svc->get_functions()) {
       std::string request_message_name = to_pascal_case(func->get_name()) + "PRequest";
-      std::string response_message_name;
-
-      if (func->get_returntype()->is_typedef()) {
-        response_message_name = to_pascal_case(func->get_returntype()->get_name());
-      } else {
-        response_message_name = to_pascal_case(func->get_name()) + "PResponse";
-      }
+      std::string response_message_name  = to_pascal_case(func->get_name()) + "PResponse";
 
       f_proto_ << "  rpc " << to_pascal_case(func->get_name()) << " (" << request_message_name
                << ") returns (" << response_message_name << ");\n";
@@ -303,7 +295,7 @@ private:
         if (type_program != program_) {
           if (!(type_program->get_namespace("grpc").empty())) {
             std::string package_name = to_lower_snake_case(type_program->get_name());
-            return namespace_path(type_program) + "/" + package_name  + "/" + to_pascal_case(type->get_name());
+            return  package_name  + "." + to_pascal_case(type->get_name());
           }
         }
       }
